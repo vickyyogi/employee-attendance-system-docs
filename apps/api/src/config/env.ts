@@ -23,6 +23,12 @@ const envSchema = z.object({
     .default('local-dev-insecure-auth-secret-minimum-32-characters-key'),
   AUTH_ACCESS_TOKEN_EXPIRY: z.string().default('15m'),
   AUTH_REFRESH_TOKEN_EXPIRY_DAYS: z.coerce.number().int().positive().default(7),
+  STORAGE_PROVIDER: z.enum(['local', 's3']).default('local'),
+  STORAGE_LOCAL_DIR: z.string().default('storage/selfies'),
+  STORAGE_SIGNED_URL_SECRET: z.string().optional(),
+  STORAGE_UPLOAD_EXPIRY_SECONDS: z.coerce.number().int().positive().default(900),
+  STORAGE_READ_EXPIRY_SECONDS: z.coerce.number().int().positive().default(300),
+  STORAGE_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(5 * 1024 * 1024),
 });
 
 export type Env = z.infer<typeof envSchema>;

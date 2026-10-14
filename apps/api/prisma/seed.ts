@@ -12,6 +12,10 @@ async function main() {
   // 1. Clean existing data (dev only)
   await prisma.refreshToken.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.employeeShift.deleteMany();
+  await prisma.shift.deleteMany();
+  await prisma.workLocation.deleteMany();
+  await prisma.holiday.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.companyMembership.deleteMany();
   await prisma.platformAdmin.deleteMany();
@@ -220,6 +224,77 @@ async function main() {
     },
   });
 
+  // 6. Create Work Locations
+  await prisma.workLocation.create({
+    data: {
+      companyId: companyA.id,
+      name: 'Acme HQ Jakarta',
+      address: 'Jl. Jenderal Sudirman No. 1, Jakarta Pusat',
+      latitude: -6.2088000,
+      longitude: 106.8456000,
+      geofenceRadiusM: 100,
+      maxGpsAccuracyM: 50,
+      isActive: true,
+    },
+  });
+
+  await prisma.workLocation.create({
+    data: {
+      companyId: companyB.id,
+      name: 'Globex Surabaya Hub',
+      address: 'Jl. Pemuda No. 10, Surabaya',
+      latitude: -7.2575000,
+      longitude: 112.7521000,
+      geofenceRadiusM: 150,
+      maxGpsAccuracyM: 50,
+      isActive: true,
+    },
+  });
+
+  // 7. Create Shifts (including standard and overnight)
+  const dayShiftA = await prisma.shift.create({
+    data: {
+      companyId: companyA.id,
+      name: 'Regular Day Shift',
+      startTimeLocal: '08:00',
+      endTimeLocal: '17:00',
+      crossesMidnight: false,
+      gracePeriodMinutes: 15,
+      isActive: true,
+    },
+  });
+
+  await prisma.shift.create({
+    data: {
+      companyId: companyA.id,
+      name: 'Overnight Shift',
+      startTimeLocal: '22:00',
+      endTimeLocal: '06:00',
+      crossesMidnight: true,
+      gracePeriodMinutes: 15,
+      isActive: true,
+    },
+  });
+
+  // 8. Assign Shift to Employee
+  await prisma.employeeShift.create({
+    data: {
+      companyId: companyA.id,
+      employeeId: emp1.id,
+      shiftId: dayShiftA.id,
+      effectiveFrom: new Date('2024-01-01'),
+    },
+  });
+
+  // 9. Create Holidays
+  await prisma.holiday.create({
+    data: {
+      companyId: companyA.id,
+      date: new Date('2024-01-01'),
+      name: 'Tahun Baru Masehi',
+    },
+  });
+
   console.info('Development seed completed successfully:', {
     platformAdmin: platformAdminUser.email,
     companies: [companyA.slug, companyB.slug],
@@ -231,6 +306,9 @@ async function main() {
       userMulti.email,
     ],
     employeesCreated: ['ACM-001', 'ACM-002', 'GLX-001'],
+    locationsCreated: ['Acme HQ Jakarta', 'Globex Surabaya Hub'],
+    shiftsCreated: ['Regular Day Shift', 'Overnight Shift'],
+    holidaysCreated: ['Tahun Baru Masehi'],
   });
 }
 

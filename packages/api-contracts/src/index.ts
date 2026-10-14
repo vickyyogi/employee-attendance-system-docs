@@ -66,6 +66,7 @@ export type EmploymentStatus = 'ACTIVE' | 'INACTIVE' | 'TERMINATED';
 export type AttendanceStatus = 'IN_PROGRESS' | 'PRESENT' | 'LATE' | 'FLAGGED' | 'CORRECTED';
 export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export type AttendanceCorrectionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type SelfieUploadStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'ATTACHED' | 'EXPIRED';
 
 /**
  * Standard Permission Keys defined in ROLE_PERMISSION_MATRIX.md
@@ -267,4 +268,268 @@ export interface EmployeeListQuery {
   positionId?: string;
   status?: EmploymentStatus;
 }
+
+/**
+ * Work Location types
+ */
+export interface WorkLocationDto {
+  id: string;
+  companyId: string;
+  name: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusM: number;
+  maxGpsAccuracyM: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateWorkLocationRequest {
+  name: string;
+  address?: string;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusM?: number;
+  maxGpsAccuracyM?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateWorkLocationRequest {
+  name?: string;
+  address?: string | null;
+  latitude?: number;
+  longitude?: number;
+  geofenceRadiusM?: number;
+  maxGpsAccuracyM?: number;
+  isActive?: boolean;
+}
+
+/**
+ * Shift types
+ */
+export interface ShiftDto {
+  id: string;
+  companyId: string;
+  name: string;
+  startTimeLocal: string;
+  endTimeLocal: string;
+  crossesMidnight: boolean;
+  gracePeriodMinutes: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateShiftRequest {
+  name: string;
+  startTimeLocal: string;
+  endTimeLocal: string;
+  crossesMidnight?: boolean;
+  gracePeriodMinutes?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateShiftRequest {
+  name?: string;
+  startTimeLocal?: string;
+  endTimeLocal?: string;
+  crossesMidnight?: boolean;
+  gracePeriodMinutes?: number;
+  isActive?: boolean;
+}
+
+/**
+ * Employee Shift Assignment types
+ */
+export interface EmployeeShiftDto {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    fullName: string;
+    employeeNumber: string;
+  } | null;
+  shiftId: string;
+  shift?: {
+    id: string;
+    name: string;
+    startTimeLocal: string;
+    endTimeLocal: string;
+    crossesMidnight: boolean;
+    gracePeriodMinutes: number;
+  } | null;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateEmployeeShiftRequest {
+  employeeId: string;
+  shiftId: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+}
+
+/**
+ * Holiday types
+ */
+export interface HolidayDto {
+  id: string;
+  companyId: string;
+  date: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface CreateHolidayRequest {
+  date: string;
+  name: string;
+}
+
+export interface UpdateHolidayRequest {
+  date?: string;
+  name?: string;
+}
+
+/**
+ * Selfie Upload types (Stage 7)
+ */
+export interface SelfieUploadDto {
+  id: string;
+  companyId: string;
+  userId: string;
+  employeeId?: string | null;
+  objectKey: string;
+  originalName?: string | null;
+  mimeType: string;
+  fileSizeBytes?: number | null;
+  fileHashSha256?: string | null;
+  status: SelfieUploadStatus;
+  uploadUrlExpiresAt: string;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSelfieUploadIntentRequest {
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  originalName?: string;
+  fileSizeBytes?: number;
+}
+
+export interface CreateSelfieUploadIntentResponse {
+  uploadId: string;
+  uploadUrl: string;
+  objectKey: string;
+  expiresInSeconds: number;
+  maxFileSizeBytes: number;
+  requiredHeaders?: Record<string, string>;
+}
+
+export interface CompleteSelfieUploadResponse {
+  upload: SelfieUploadDto;
+  verified: boolean;
+}
+
+export interface SignedReadUrlResponse {
+  readUrl: string;
+  expiresInSeconds: number;
+  objectKey: string;
+}
+
+/**
+ * Attendance engine types (Stage 8)
+ */
+export type AttendanceEventType = 'CHECK_IN' | 'CHECK_OUT' | 'CORRECTION' | 'FLAG';
+
+export interface AttendanceRecordDto {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    fullName: string;
+    employeeNumber: string;
+  } | null;
+  workDate: string;
+  shiftId?: string | null;
+  shift?: {
+    id: string;
+    name: string;
+    startTimeLocal: string;
+    endTimeLocal: string;
+  } | null;
+  workLocationId?: string | null;
+  workLocation?: {
+    id: string;
+    name: string;
+  } | null;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  checkInLatitude?: number | null;
+  checkInLongitude?: number | null;
+  checkInAccuracyM?: number | null;
+  checkInDistanceM?: number | null;
+  checkInGeofenceValid?: boolean | null;
+  checkInSelfieObjectKey?: string | null;
+  checkOutLatitude?: number | null;
+  checkOutLongitude?: number | null;
+  checkOutAccuracyM?: number | null;
+  checkOutDistanceM?: number | null;
+  checkOutGeofenceValid?: boolean | null;
+  checkOutSelfieObjectKey?: string | null;
+  status: AttendanceStatus;
+  idempotencyKey?: string | null;
+  flagReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AttendanceEventDto {
+  id: string;
+  companyId: string;
+  attendanceRecordId: string;
+  eventType: AttendanceEventType;
+  occurredAt: string;
+  actorUserId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface CheckInRequest {
+  workLocationId: string;
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  selfieUploadId: string;
+  idempotencyKey: string;
+}
+
+export interface CheckOutRequest {
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  selfieUploadId?: string;
+  workLocationId?: string;
+  idempotencyKey: string;
+}
+
+export interface FlagAttendanceRequest {
+  reason: string;
+}
+
+export interface ListAttendanceQuery {
+  employeeId?: string;
+  startDate?: string;
+  endDate?: string;
+  status?: AttendanceStatus;
+  workLocationId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
 

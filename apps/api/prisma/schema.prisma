@@ -53,6 +53,29 @@ enum EmploymentStatus {
   TERMINATED
 }
 
+enum SelfieUploadStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  ATTACHED
+  EXPIRED
+}
+
+enum AttendanceStatus {
+  IN_PROGRESS
+  PRESENT
+  LATE
+  FLAGGED
+  CORRECTED
+}
+
+enum AttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+  CORRECTION
+  FLAG
+}
+
 model User {
   id           String      @id @default(uuid()) @db.Uuid
   email        String      @unique
@@ -64,11 +87,13 @@ model User {
   updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz
   lastLoginAt  DateTime?   @map("last_login_at") @db.Timestamptz
 
-  memberships   CompanyMembership[]
-  platformAdmin PlatformAdmin?
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
-  employees     Employee[]
+  memberships      CompanyMembership[]
+  platformAdmin    PlatformAdmin?
+  refreshTokens    RefreshToken[]
+  auditLogs        AuditLog[]
+  employees        Employee[]
+  selfieUploads    SelfieUpload[]
+  attendanceEvents AttendanceEvent[]
 
   @@map("users")
 }
@@ -82,11 +107,18 @@ model Company {
   createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
-  memberships CompanyMembership[]
-  departments Department[]
-  positions   Position[]
-  auditLogs   AuditLog[]
-  employees   Employee[]
+  memberships       CompanyMembership[]
+  departments       Department[]
+  positions         Position[]
+  auditLogs         AuditLog[]
+  employees         Employee[]
+  workLocations     WorkLocation[]
+  shifts            Shift[]
+  employeeShifts    EmployeeShift[]
+  holidays          Holiday[]
+  selfieUploads     SelfieUpload[]
+  attendanceRecords AttendanceRecord[]
+  attendanceEvents  AttendanceEvent[]
 
   @@map("companies")
 }
@@ -177,6 +209,9 @@ model Employee {
   position          Position?        @relation(fields: [positionId], references: [id], onDelete: SetNull)
   manager           Employee?        @relation("EmployeeToManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
   subordinates      Employee[]       @relation("EmployeeToManager")
+  employeeShifts    EmployeeShift[]
+  selfieUploads     SelfieUpload[]
+  attendanceRecords AttendanceRecord[]
 
   @@unique([companyId, employeeNumber])
   @@unique([companyId, userId])
@@ -221,3 +256,166 @@ model AuditLog {
   @@index([actorUserId, createdAt])
   @@map("audit_logs")
 }
+
+model WorkLocation {
+  id                String             @id @default(uuid()) @db.Uuid
+  companyId         String             @map("company_id") @db.Uuid
+  name              String
+  address           String?
+  latitude          Decimal            @db.Decimal(10, 7)
+  longitude         Decimal            @db.Decimal(10, 7)
+  geofenceRadiusM   Int                @default(100) @map("geofence_radius_m")
+  maxGpsAccuracyM   Int                @default(50) @map("max_gps_accuracy_m")
+  isActive          Boolean            @default(true) @map("is_active")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  attendanceRecords AttendanceRecord[]
+
+  @@index([companyId, isActive])
+  @@map("work_locations")
+}
+
+model Shift {
+  id                 String             @id @default(uuid()) @db.Uuid
+  companyId          String             @map("company_id") @db.Uuid
+  name               String
+  startTimeLocal     String             @map("start_time_local")
+  endTimeLocal       String             @map("end_time_local")
+  crossesMidnight    Boolean            @default(false) @map("crosses_midnight")
+  gracePeriodMinutes Int                @default(15) @map("grace_period_minutes")
+  isActive           Boolean            @default(true) @map("is_active")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeShifts     EmployeeShift[]
+  attendanceRecords  AttendanceRecord[]
+
+  @@unique([companyId, name])
+  @@index([companyId, isActive])
+  @@map("shifts")
+}
+
+model EmployeeShift {
+  id            String    @id @default(uuid()) @db.Uuid
+  companyId     String    @map("company_id") @db.Uuid
+  employeeId    String    @map("employee_id") @db.Uuid
+  shiftId       String    @map("shift_id") @db.Uuid
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift         Shift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, employeeId])
+  @@index([companyId, shiftId])
+  @@map("employee_shifts")
+}
+
+model Holiday {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  date      DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, date])
+  @@index([companyId, date])
+  @@map("holidays")
+}
+
+model SelfieUpload {
+  id                 String             @id @default(uuid()) @db.Uuid
+  companyId          String             @map("company_id") @db.Uuid
+  userId             String             @map("user_id") @db.Uuid
+  employeeId         String?            @map("employee_id") @db.Uuid
+  objectKey          String             @unique @map("object_key")
+  originalName       String?            @map("original_name")
+  mimeType           String             @map("mime_type")
+  fileSizeBytes      Int?               @map("file_size_bytes")
+  fileHashSha256     String?            @map("file_hash_sha256")
+  status             SelfieUploadStatus @default(PENDING)
+  uploadUrlExpiresAt DateTime           @map("upload_url_expires_at") @db.Timestamptz
+  completedAt        DateTime?          @map("completed_at") @db.Timestamptz
+  metadata           Json?              @db.JsonB
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee           Employee?          @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, userId, status])
+  @@index([companyId, status])
+  @@index([uploadUrlExpiresAt, status])
+  @@map("selfie_uploads")
+}
+
+model AttendanceRecord {
+  id                      String           @id @default(uuid()) @db.Uuid
+  companyId               String           @map("company_id") @db.Uuid
+  employeeId              String           @map("employee_id") @db.Uuid
+  workDate                DateTime         @map("work_date") @db.Date
+  shiftId                 String?          @map("shift_id") @db.Uuid
+  workLocationId          String?          @map("work_location_id") @db.Uuid
+  checkInAt               DateTime?        @map("check_in_at") @db.Timestamptz
+  checkOutAt              DateTime?        @map("check_out_at") @db.Timestamptz
+  checkInLatitude         Decimal?         @map("check_in_latitude") @db.Decimal(10, 7)
+  checkInLongitude        Decimal?         @map("check_in_longitude") @db.Decimal(10, 7)
+  checkInAccuracyM        Int?             @map("check_in_accuracy_m")
+  checkInDistanceM        Int?             @map("check_in_distance_m")
+  checkInGeofenceValid    Boolean?         @map("check_in_geofence_valid")
+  checkInSelfieObjectKey  String?          @map("check_in_selfie_object_key")
+  checkOutLatitude        Decimal?         @map("check_out_latitude") @db.Decimal(10, 7)
+  checkOutLongitude       Decimal?         @map("check_out_longitude") @db.Decimal(10, 7)
+  checkOutAccuracyM       Int?             @map("check_out_accuracy_m")
+  checkOutDistanceM       Int?             @map("check_out_distance_m")
+  checkOutGeofenceValid   Boolean?         @map("check_out_geofence_valid")
+  checkOutSelfieObjectKey String?          @map("check_out_selfie_object_key")
+  status                  AttendanceStatus @default(IN_PROGRESS)
+  idempotencyKey          String?          @map("idempotency_key")
+  flagReason              String?          @map("flag_reason")
+  createdAt               DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  company                 Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee                Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift                   Shift?           @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  workLocation            WorkLocation?    @relation(fields: [workLocationId], references: [id], onDelete: SetNull)
+  events                  AttendanceEvent[]
+
+  @@unique([companyId, employeeId, workDate])
+  @@index([companyId, workDate])
+  @@index([companyId, employeeId])
+  @@index([companyId, status])
+  @@index([companyId, idempotencyKey])
+  @@map("attendance_records")
+}
+
+model AttendanceEvent {
+  id                 String              @id @default(uuid()) @db.Uuid
+  companyId          String              @map("company_id") @db.Uuid
+  attendanceRecordId String              @map("attendance_record_id") @db.Uuid
+  eventType          AttendanceEventType @map("event_type")
+  occurredAt         DateTime            @default(now()) @map("occurred_at") @db.Timestamptz
+  actorUserId        String?             @map("actor_user_id") @db.Uuid
+  metadata           Json?               @db.JsonB
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  attendanceRecord   AttendanceRecord    @relation(fields: [attendanceRecordId], references: [id], onDelete: Cascade)
+  actorUser          User?               @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, attendanceRecordId])
+  @@index([companyId, eventType])
+  @@map("attendance_events")
+}
+
+
