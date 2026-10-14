@@ -60,6 +60,9 @@ export type UserStatus = 'ACTIVE' | 'INVITED' | 'SUSPENDED';
 export type CompanyStatus = 'ACTIVE' | 'SUSPENDED';
 export type MembershipRole = 'COMPANY_ADMIN' | 'HR_ADMIN' | 'SUPERVISOR' | 'EMPLOYEE' | 'AUDITOR';
 export type MembershipStatus = 'ACTIVE' | 'INVITED' | 'DISABLED';
+export type DepartmentStatus = 'ACTIVE' | 'INACTIVE';
+export type PositionStatus = 'ACTIVE' | 'INACTIVE';
+export type EmploymentStatus = 'ACTIVE' | 'INACTIVE' | 'TERMINATED';
 export type AttendanceStatus = 'IN_PROGRESS' | 'PRESENT' | 'LATE' | 'FLAGGED' | 'CORRECTED';
 export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export type AttendanceCorrectionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
@@ -147,5 +150,121 @@ export interface AuthMeResponseData {
     role: MembershipRole;
     permissions: PermissionKey[];
   } | null;
+}
+
+/**
+ * Department types
+ */
+export interface DepartmentDto {
+  id: string;
+  companyId: string;
+  name: string;
+  code?: string | null;
+  status: DepartmentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDepartmentRequest {
+  name: string;
+  code?: string;
+}
+
+export interface UpdateDepartmentRequest {
+  name?: string;
+  code?: string | null;
+  status?: DepartmentStatus;
+}
+
+/**
+ * Position types
+ */
+export interface PositionDto {
+  id: string;
+  companyId: string;
+  name: string;
+  status: PositionStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePositionRequest {
+  name: string;
+}
+
+export interface UpdatePositionRequest {
+  name?: string;
+  status?: PositionStatus;
+}
+
+/**
+ * Employee types
+ */
+export interface EmployeeDto {
+  id: string;
+  companyId: string;
+  userId?: string | null;
+  employeeNumber: string;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  departmentId?: string | null;
+  department?: {
+    id: string;
+    name: string;
+    code?: string | null;
+  } | null;
+  positionId?: string | null;
+  position?: {
+    id: string;
+    name: string;
+  } | null;
+  managerEmployeeId?: string | null;
+  manager?: {
+    id: string;
+    fullName: string;
+    employeeNumber: string;
+  } | null;
+  employmentStatus: EmploymentStatus;
+  hireDate?: string | null;
+  terminationDate?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateEmployeeRequest {
+  employeeNumber: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  departmentId?: string;
+  positionId?: string;
+  managerEmployeeId?: string;
+  userId?: string;
+  hireDate?: string;
+}
+
+export interface UpdateEmployeeRequest {
+  fullName?: string;
+  email?: string | null;
+  phone?: string | null;
+  departmentId?: string | null;
+  positionId?: string | null;
+  managerEmployeeId?: string | null;
+  hireDate?: string | null;
+}
+
+export interface UpdateEmployeeStatusRequest {
+  status: EmploymentStatus;
+  terminationDate?: string | null;
+}
+
+export interface EmployeeListQuery {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  departmentId?: string;
+  positionId?: string;
+  status?: EmploymentStatus;
 }
 

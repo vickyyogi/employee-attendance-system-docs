@@ -47,6 +47,12 @@ enum PositionStatus {
   INACTIVE
 }
 
+enum EmploymentStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
 model User {
   id           String      @id @default(uuid()) @db.Uuid
   email        String      @unique
@@ -62,6 +68,7 @@ model User {
   platformAdmin PlatformAdmin?
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
+  employees     Employee[]
 
   @@map("users")
 }
@@ -79,6 +86,7 @@ model Company {
   departments Department[]
   positions   Position[]
   auditLogs   AuditLog[]
+  employees   Employee[]
 
   @@map("companies")
 }
@@ -123,6 +131,7 @@ model Department {
   updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz
 
   company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employees Employee[]
 
   @@unique([companyId, name])
   @@index([companyId, status])
@@ -138,10 +147,43 @@ model Position {
   updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
   company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employees Employee[]
 
   @@unique([companyId, name])
   @@index([companyId, status])
   @@map("positions")
+}
+
+model Employee {
+  id                String           @id @default(uuid()) @db.Uuid
+  companyId         String           @map("company_id") @db.Uuid
+  userId            String?          @map("user_id") @db.Uuid
+  employeeNumber    String           @map("employee_number")
+  fullName          String           @map("full_name")
+  email             String?
+  phone             String?
+  departmentId      String?          @map("department_id") @db.Uuid
+  positionId        String?          @map("position_id") @db.Uuid
+  managerEmployeeId String?          @map("manager_employee_id") @db.Uuid
+  employmentStatus  EmploymentStatus @default(ACTIVE) @map("employment_status")
+  hireDate          DateTime?        @map("hire_date") @db.Date
+  terminationDate   DateTime?        @map("termination_date") @db.Date
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user              User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  department        Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  position          Position?        @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  manager           Employee?        @relation("EmployeeToManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
+  subordinates      Employee[]       @relation("EmployeeToManager")
+
+  @@unique([companyId, employeeNumber])
+  @@unique([companyId, userId])
+  @@index([companyId, employmentStatus])
+  @@index([companyId, departmentId])
+  @@index([companyId, positionId])
+  @@map("employees")
 }
 
 model RefreshToken {

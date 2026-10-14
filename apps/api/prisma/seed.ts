@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient, MembershipRole, UserStatus, CompanyStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -11,6 +12,7 @@ async function main() {
   // 1. Clean existing data (dev only)
   await prisma.refreshToken.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.employee.deleteMany();
   await prisma.companyMembership.deleteMany();
   await prisma.platformAdmin.deleteMany();
   await prisma.department.deleteMany();
@@ -163,6 +165,61 @@ async function main() {
     },
   });
 
+  // 5. Create Employees
+  const engDept = await prisma.department.findFirst({
+    where: { companyId: companyA.id, code: 'ENG' },
+  });
+  const devPos = await prisma.position.findFirst({
+    where: { companyId: companyA.id, name: 'Senior Software Engineer' },
+  });
+
+  const emp1 = await prisma.employee.create({
+    data: {
+      companyId: companyA.id,
+      userId: userAdminA.id,
+      employeeNumber: 'ACM-001',
+      fullName: 'Acme Admin',
+      email: userAdminA.email,
+      departmentId: engDept?.id,
+      positionId: devPos?.id,
+      hireDate: new Date('2024-01-15'),
+    },
+  });
+
+  await prisma.employee.create({
+    data: {
+      companyId: companyA.id,
+      userId: userEmployeeA.id,
+      employeeNumber: 'ACM-002',
+      fullName: 'Acme Employee',
+      email: userEmployeeA.email,
+      departmentId: engDept?.id,
+      positionId: devPos?.id,
+      managerEmployeeId: emp1.id,
+      hireDate: new Date('2024-03-01'),
+    },
+  });
+
+  const opsDeptB = await prisma.department.findFirst({
+    where: { companyId: companyB.id, code: 'OPS' },
+  });
+  const opsPosB = await prisma.position.findFirst({
+    where: { companyId: companyB.id, name: 'Operations Coordinator' },
+  });
+
+  await prisma.employee.create({
+    data: {
+      companyId: companyB.id,
+      userId: userAdminB.id,
+      employeeNumber: 'GLX-001',
+      fullName: 'Globex Admin',
+      email: userAdminB.email,
+      departmentId: opsDeptB?.id,
+      positionId: opsPosB?.id,
+      hireDate: new Date('2024-02-01'),
+    },
+  });
+
   console.info('Development seed completed successfully:', {
     platformAdmin: platformAdminUser.email,
     companies: [companyA.slug, companyB.slug],
@@ -173,6 +230,7 @@ async function main() {
       userAdminB.email,
       userMulti.email,
     ],
+    employeesCreated: ['ACM-001', 'ACM-002', 'GLX-001'],
   });
 }
 

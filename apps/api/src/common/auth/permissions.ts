@@ -102,7 +102,6 @@ export const ROLE_PERMISSIONS: Record<MembershipRole, readonly PermissionKey[]> 
   ],
   EMPLOYEE: [
     'company.read',
-    'employee.read',
     'attendance.read_own',
     'attendance.check_in',
     'attendance.check_out',
