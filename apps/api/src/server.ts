@@ -1,10 +1,12 @@
-import dotenv from 'dotenv';
-dotenv.config();
-
+import { env } from './config/env';
+import { logger } from './infrastructure/logger/logger';
 import { app } from './app';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
-
-app.listen(PORT, () => {
-  console.info(`API Server running on http://localhost:${PORT}`);
+const server = app.listen(env.PORT, () => {
+  logger.info(`API Server running on http://localhost:${env.PORT}`, {
+    port: env.PORT,
+    environment: env.NODE_ENV,
+  });
 });
+
+export { server };

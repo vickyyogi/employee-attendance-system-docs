@@ -1,57 +1,53 @@
-import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
+import express from 'express';
 import helmet from 'helmet';
-import { randomUUID } from 'crypto';
-import type { ApiResponse, HealthCheckData, ApiErrorResponse } from '@attendance/api-contracts';
+import cors from 'cors';
+import { env } from './config/env';
+import { requestIdMiddleware } from './common/middleware/request-id';
+import { requestLogger } from './common/middleware/request-logger';
+import { globalRateLimiter } from './common/middleware/rate-limiter';
+import { notFoundHandler } from './common/middleware/not-found-handler';
+import { errorHandler } from './common/middleware/error-handler';
+import { v1Router } from './routes/v1.routes';
 
 const app = express();
 
+// Security headers
 app.use(helmet());
+
+// CORS configuration with whitelist check
 app.use(
   cors({
-    origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['http://localhost:5173'],
+    origin: (origin, callback) => {
+      // Allow non-browser requests (mobile, curl, server-to-server) with no origin
+      if (!origin) return callback(null, true);
+      if (env.CORS_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   })
 );
-app.use(express.json());
 
-// Request ID middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const requestId = (req.headers['x-request-id'] as string) || randomUUID();
-  res.setHeader('x-request-id', requestId);
-  req.headers['x-request-id'] = requestId;
-  next();
-});
+// Body parsers
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Health check endpoint
-app.get('/api/v1/health', (_req: Request, res: Response) => {
-  const requestId = res.getHeader('x-request-id') as string;
-  const response: ApiResponse<HealthCheckData> = {
-    data: {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: Math.floor(process.uptime()),
-      environment: process.env.NODE_ENV || 'development',
-    },
-    meta: {
-      requestId,
-    },
-  };
-  res.status(200).json(response);
-});
+// Request ID & Logging
+app.use(requestIdMiddleware);
+app.use(requestLogger);
+
+// Global Rate Limiting
+app.use(globalRateLimiter);
+
+// API v1 Router
+app.use('/api/v1', v1Router);
 
 // 404 Handler
-app.use((req: Request, res: Response) => {
-  const requestId = res.getHeader('x-request-id') as string;
-  const errorResponse: ApiErrorResponse = {
-    error: {
-      code: 'NOT_FOUND',
-      message: `Cannot ${req.method} ${req.path}`,
-      requestId,
-    },
-  };
-  res.status(404).json(errorResponse);
-});
+app.use(notFoundHandler);
+
+// Centralized Error Handler
+app.use(errorHandler);
 
 export { app };
 export default app;

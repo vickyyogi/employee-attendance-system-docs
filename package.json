@@ -15,10 +15,17 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present"
   },
+  "prisma": {
+    "schema": "apps/api/prisma/schema.prisma",
+    "seed": "npx tsx apps/api/prisma/seed.ts"
+  },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.71.2",
     "@typescript-eslint/parser": "^8.71.2",
     "eslint": "^10.12.0",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
   }
 }
