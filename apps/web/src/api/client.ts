@@ -329,4 +329,8 @@ export class ApiClient {
   }
 }
 
-export const apiClient = new ApiClient();
+export const apiClient = new ApiClient(
+  (typeof import.meta !== 'undefined' &&
+    (import.meta as unknown as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL) ||
+    '/api/v1'
+);

@@ -91,6 +91,8 @@ export const ROLE_PERMISSIONS: Record<MembershipRole, readonly PermissionKey[]> 
   ],
   SUPERVISOR: [
     'company.read',
+    'location.read',
+    'shift.read',
     'attendance.read_own',
     'attendance.check_in',
     'attendance.check_out',
@@ -102,6 +104,8 @@ export const ROLE_PERMISSIONS: Record<MembershipRole, readonly PermissionKey[]> 
   ],
   EMPLOYEE: [
     'company.read',
+    'location.read',
+    'shift.read',
     'attendance.read_own',
     'attendance.check_in',
     'attendance.check_out',

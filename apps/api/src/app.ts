@@ -18,9 +18,16 @@ app.use(helmet());
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow non-browser requests (mobile, curl, server-to-server) with no origin
+      // Allow non-browser requests (mobile native, curl, server-to-server) with no origin
       if (!origin) return callback(null, true);
       if (env.CORS_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      // In non-production mode (development/test), allow any localhost or 127.0.0.1 port (for Flutter web, Vite, etc.)
+      if (
+        env.NODE_ENV !== 'production' &&
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
         return callback(null, true);
       }
       return callback(new Error(`Origin ${origin} not allowed by CORS`));

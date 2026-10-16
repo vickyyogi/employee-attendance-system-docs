@@ -83,15 +83,27 @@ class AuthService {
     );
 
     final data = response as Map<String, dynamic>;
-    final companyData = data['company'] as Map<String, dynamic>;
-    final activeCompany = ActiveCompanyModel(
-      id: companyData['id'] as String,
-      name: companyData['name'] as String,
-      slug: companyData['slug'] as String,
-      role: data['role'] as String? ?? 'EMPLOYEE',
-      permissions: (data['permissions'] as List<dynamic>?)?.map((p) => p.toString()).toList() ?? [],
-      timezone: companyData['timezone'] as String? ?? 'Asia/Jakarta',
-    );
+    ActiveCompanyModel activeCompany;
+
+    if (data['activeCompany'] != null && data['activeCompany'] is Map<String, dynamic>) {
+      activeCompany = ActiveCompanyModel.fromJson(data['activeCompany'] as Map<String, dynamic>);
+    } else if (data['company'] != null && data['company'] is Map<String, dynamic>) {
+      final companyData = data['company'] as Map<String, dynamic>;
+      activeCompany = ActiveCompanyModel(
+        id: companyData['id'] as String,
+        name: companyData['name'] as String,
+        slug: companyData['slug'] as String,
+        role: data['role'] as String? ?? 'EMPLOYEE',
+        permissions: (data['permissions'] as List<dynamic>?)?.map((p) => p.toString()).toList() ?? [],
+        timezone: companyData['timezone'] as String? ?? 'Asia/Jakarta',
+      );
+    } else {
+      activeCompany = ActiveCompanyModel.fromJson(data);
+    }
+
+    if (data['accessToken'] is String) {
+      await _storageService.setAccessToken(data['accessToken'] as String);
+    }
 
     await _storageService.setActiveCompanyId(activeCompany.id);
     await _storageService.setActiveCompanyJson(jsonEncode(activeCompany.toJson()));

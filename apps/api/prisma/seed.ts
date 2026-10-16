@@ -228,10 +228,10 @@ async function main() {
   await prisma.workLocation.create({
     data: {
       companyId: companyA.id,
-      name: 'Acme HQ Jakarta',
-      address: 'Jl. Jenderal Sudirman No. 1, Jakarta Pusat',
-      latitude: -6.2088000,
-      longitude: 106.8456000,
+      name: 'BPR Adiartha Reksacitra',
+      address: 'Jl. Raya Mondoroko No.114 Pagentan - Singosari, Malang, Jawa Timur',
+      latitude: -7.902444234001053,
+      longitude:  112.66144098107387,
       geofenceRadiusM: 100,
       maxGpsAccuracyM: 50,
       isActive: true,
@@ -306,7 +306,7 @@ async function main() {
       userMulti.email,
     ],
     employeesCreated: ['ACM-001', 'ACM-002', 'GLX-001'],
-    locationsCreated: ['Acme HQ Jakarta', 'Globex Surabaya Hub'],
+    locationsCreated: ['BPR Adiartha Reksacitra', 'Globex Surabaya Hub'],
     shiftsCreated: ['Regular Day Shift', 'Overnight Shift'],
     holidaysCreated: ['Tahun Baru Masehi'],
   });
