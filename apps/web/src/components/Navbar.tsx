@@ -1,6 +1,12 @@
 import React from 'react';
 
-export type ActiveTab = 'employees' | 'departments' | 'positions';
+export type ActiveTab =
+  | 'dashboard'
+  | 'approvals'
+  | 'reports'
+  | 'employees'
+  | 'departments'
+  | 'positions';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -16,6 +22,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   role,
 }) => {
   const tabs: Array<{ id: ActiveTab; label: string }> = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'approvals', label: 'Approvals' },
+    { id: 'reports', label: 'Reports' },
     { id: 'employees', label: 'Employees' },
     { id: 'departments', label: 'Departments' },
     { id: 'positions', label: 'Positions' },

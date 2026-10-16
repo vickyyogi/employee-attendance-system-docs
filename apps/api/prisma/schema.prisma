@@ -76,6 +76,35 @@ enum AttendanceEventType {
   FLAG
 }
 
+enum LeaveUnit {
+  DAYS
+  HOURS
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AttendanceCorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalRequestType {
+  LEAVE
+  ATTENDANCE_CORRECTION
+}
+
+enum ApprovalActionType {
+  APPROVED
+  REJECTED
+}
+
 model User {
   id           String      @id @default(uuid()) @db.Uuid
   email        String      @unique
@@ -87,13 +116,16 @@ model User {
   updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz
   lastLoginAt  DateTime?   @map("last_login_at") @db.Timestamptz
 
-  memberships      CompanyMembership[]
-  platformAdmin    PlatformAdmin?
-  refreshTokens    RefreshToken[]
-  auditLogs        AuditLog[]
-  employees        Employee[]
-  selfieUploads    SelfieUpload[]
-  attendanceEvents AttendanceEvent[]
+  memberships                  CompanyMembership[]
+  platformAdmin                PlatformAdmin?
+  refreshTokens                RefreshToken[]
+  auditLogs                    AuditLog[]
+  employees                    Employee[]
+  selfieUploads                SelfieUpload[]
+  attendanceEvents             AttendanceEvent[]
+  decidedLeaveRequests         LeaveRequest[]                @relation("DecidedLeaveRequests")
+  decidedAttendanceCorrections AttendanceCorrectionRequest[] @relation("DecidedAttendanceCorrections")
+  approvalActions              ApprovalAction[]
 
   @@map("users")
 }
@@ -107,18 +139,22 @@ model Company {
   createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
-  memberships       CompanyMembership[]
-  departments       Department[]
-  positions         Position[]
-  auditLogs         AuditLog[]
-  employees         Employee[]
-  workLocations     WorkLocation[]
-  shifts            Shift[]
-  employeeShifts    EmployeeShift[]
-  holidays          Holiday[]
-  selfieUploads     SelfieUpload[]
-  attendanceRecords AttendanceRecord[]
-  attendanceEvents  AttendanceEvent[]
+  memberships                  CompanyMembership[]
+  departments                  Department[]
+  positions                    Position[]
+  auditLogs                    AuditLog[]
+  employees                    Employee[]
+  workLocations                WorkLocation[]
+  shifts                       Shift[]
+  employeeShifts               EmployeeShift[]
+  holidays                     Holiday[]
+  selfieUploads                SelfieUpload[]
+  attendanceRecords            AttendanceRecord[]
+  attendanceEvents             AttendanceEvent[]
+  leaveTypes                   LeaveType[]
+  leaveRequests                LeaveRequest[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
+  approvalActions              ApprovalAction[]
 
   @@map("companies")
 }
@@ -209,9 +245,11 @@ model Employee {
   position          Position?        @relation(fields: [positionId], references: [id], onDelete: SetNull)
   manager           Employee?        @relation("EmployeeToManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
   subordinates      Employee[]       @relation("EmployeeToManager")
-  employeeShifts    EmployeeShift[]
-  selfieUploads     SelfieUpload[]
-  attendanceRecords AttendanceRecord[]
+  employeeShifts               EmployeeShift[]
+  selfieUploads                SelfieUpload[]
+  attendanceRecords            AttendanceRecord[]
+  leaveRequests                LeaveRequest[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
 
   @@unique([companyId, employeeNumber])
   @@unique([companyId, userId])
@@ -390,6 +428,7 @@ model AttendanceRecord {
   shift                   Shift?           @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   workLocation            WorkLocation?    @relation(fields: [workLocationId], references: [id], onDelete: SetNull)
   events                  AttendanceEvent[]
+  correctionRequests      AttendanceCorrectionRequest[]
 
   @@unique([companyId, employeeId, workDate])
   @@index([companyId, workDate])
@@ -417,5 +456,95 @@ model AttendanceEvent {
   @@index([companyId, eventType])
   @@map("attendance_events")
 }
+
+model LeaveType {
+  id               String         @id @default(uuid()) @db.Uuid
+  companyId        String         @map("company_id") @db.Uuid
+  name             String
+  unit             LeaveUnit      @default(DAYS)
+  requiresApproval Boolean        @default(true) @map("requires_approval")
+  isActive         Boolean        @default(true) @map("is_active")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leaveRequests    LeaveRequest[]
+
+  @@unique([companyId, name])
+  @@index([companyId, isActive])
+  @@map("leave_types")
+}
+
+model LeaveRequest {
+  id              String             @id @default(uuid()) @db.Uuid
+  companyId       String             @map("company_id") @db.Uuid
+  employeeId      String             @map("employee_id") @db.Uuid
+  leaveTypeId     String             @map("leave_type_id") @db.Uuid
+  startDate       DateTime           @map("start_date") @db.Date
+  endDate         DateTime           @map("end_date") @db.Date
+  reason          String
+  status          LeaveRequestStatus @default(PENDING)
+  submittedAt     DateTime           @default(now()) @map("submitted_at") @db.Timestamptz
+  decidedAt       DateTime?          @map("decided_at") @db.Timestamptz
+  decidedByUserId String?            @map("decided_by_user_id") @db.Uuid
+  decisionNote    String?            @map("decision_note")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType       LeaveType          @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  decidedByUser   User?              @relation("DecidedLeaveRequests", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, employeeId])
+  @@index([companyId, status, submittedAt])
+  @@index([companyId, startDate, endDate])
+  @@map("leave_requests")
+}
+
+model AttendanceCorrectionRequest {
+  id                  String                     @id @default(uuid()) @db.Uuid
+  companyId           String                     @map("company_id") @db.Uuid
+  employeeId          String                     @map("employee_id") @db.Uuid
+  attendanceRecordId  String?                    @map("attendance_record_id") @db.Uuid
+  requestedCheckInAt  DateTime?                  @map("requested_check_in_at") @db.Timestamptz
+  requestedCheckOutAt DateTime?                  @map("requested_check_out_at") @db.Timestamptz
+  reason              String
+  status              AttendanceCorrectionStatus @default(PENDING)
+  submittedAt         DateTime                   @default(now()) @map("submitted_at") @db.Timestamptz
+  decidedAt           DateTime?                  @map("decided_at") @db.Timestamptz
+  decidedByUserId     String?                    @map("decided_by_user_id") @db.Uuid
+  decisionNote        String?                    @map("decision_note")
+  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz
+
+  company             Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee            Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendanceRecord    AttendanceRecord?          @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
+  decidedByUser       User?                      @relation("DecidedAttendanceCorrections", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, employeeId])
+  @@index([companyId, status, submittedAt])
+  @@map("attendance_correction_requests")
+}
+
+model ApprovalAction {
+  id          String              @id @default(uuid()) @db.Uuid
+  companyId   String              @map("company_id") @db.Uuid
+  requestType ApprovalRequestType @map("request_type")
+  requestId   String              @map("request_id") @db.Uuid
+  action      ApprovalActionType
+  actorUserId String              @map("actor_user_id") @db.Uuid
+  note        String?
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  actorUser   User                @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, requestType, requestId])
+  @@index([companyId, actorUserId, createdAt])
+  @@map("approval_actions")
+}
+
 
 

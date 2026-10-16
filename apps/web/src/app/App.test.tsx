@@ -9,8 +9,11 @@ import { PositionModal } from '../features/positions/PositionModal';
 import { EmployeeModal } from '../features/employees/EmployeeModal';
 import { EmployeeStatusModal } from '../features/employees/EmployeeStatusModal';
 import { EmployeeDetailModal } from '../features/employees/EmployeeDetailModal';
+import { AttendanceDashboard } from '../features/dashboard/AttendanceDashboard';
+import { ApprovalQueue } from '../features/approvals/ApprovalQueue';
+import { ReportsView } from '../features/reports/ReportsView';
 
-describe('Web UI Components (Stage 5)', () => {
+describe('Web UI Components (Stage 5 & Stage 11)', () => {
   it('App renders brand title, navigation tabs, and initial layout', () => {
     const html = renderToStaticMarkup(<App />);
     expect(html).toContain('Attendance System');
@@ -201,5 +204,57 @@ describe('Web UI Components (Stage 5)', () => {
     expect(html).toContain('Security (SEC)');
     expect(html).toContain('Operations Lead');
     expect(html).toContain('ACTIVE');
+  });
+
+  it('Navbar renders all Stage 11 tabs including Dashboard, Approvals, and Reports', () => {
+    const html = renderToStaticMarkup(
+      <Navbar
+        activeTab="dashboard"
+        onSelectTab={vi.fn()}
+        companyName="Acme Corp"
+        role="HR_ADMIN"
+      />
+    );
+    expect(html).toContain('Dashboard');
+    expect(html).toContain('Approvals');
+    expect(html).toContain('Reports');
+    expect(html).toContain('Employees');
+    expect(html).toContain('Departments');
+    expect(html).toContain('Positions');
+  });
+
+  it('AttendanceDashboard renders summary cards, date filter, and table layout', () => {
+    const html = renderToStaticMarkup(
+      <AttendanceDashboard onNotify={vi.fn()} onNavigateToApprovals={vi.fn()} />
+    );
+    expect(html).toContain('Attendance Dashboard');
+    expect(html).toContain('Total Today');
+    expect(html).toContain('Present / Completed');
+    expect(html).toContain('Late Arrivals');
+    expect(html).toContain('In Progress');
+    expect(html).toContain('Pending Approvals');
+    expect(html).toContain('Work Date');
+    expect(html).toContain('Status Filter');
+  });
+
+  it('ApprovalQueue renders request categories and empty approval state', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalQueue currentUserId="user-1" onNotify={vi.fn()} />
+    );
+    expect(html).toContain('Approval Queue');
+    expect(html).toContain('All Requests');
+    expect(html).toContain('Leave Requests');
+    expect(html).toContain('Attendance Corrections');
+  });
+
+  it('ReportsView renders date range selectors, export controls, and analytics headers', () => {
+    const html = renderToStaticMarkup(<ReportsView onNotify={vi.fn()} />);
+    expect(html).toContain('Attendance Reports &amp; Analytics');
+    expect(html).toContain('Start Date');
+    expect(html).toContain('End Date');
+    expect(html).toContain('Export CSV');
+    expect(html).toContain('Export JSON');
+    expect(html).toContain('Daily Breakdown');
+    expect(html).toContain('Late Arrivals');
   });
 });

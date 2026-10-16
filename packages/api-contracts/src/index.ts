@@ -485,6 +485,7 @@ export interface AttendanceRecordDto {
   status: AttendanceStatus;
   idempotencyKey?: string | null;
   flagReason?: string | null;
+  events?: AttendanceEventDto[];
   createdAt: string;
   updatedAt: string;
 }
@@ -531,5 +532,237 @@ export interface ListAttendanceQuery {
   page?: number;
   pageSize?: number;
 }
+
+/**
+ * Leave & Attendance Correction workflows (Stage 10)
+ */
+export type LeaveUnit = 'DAYS' | 'HOURS';
+export type ApprovalRequestType = 'LEAVE' | 'ATTENDANCE_CORRECTION';
+export type ApprovalActionType = 'APPROVED' | 'REJECTED';
+
+export interface LeaveTypeDto {
+  id: string;
+  companyId: string;
+  name: string;
+  unit: LeaveUnit;
+  requiresApproval: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateLeaveTypeRequest {
+  name: string;
+  unit?: LeaveUnit;
+  requiresApproval?: boolean;
+  isActive?: boolean;
+}
+
+export interface UpdateLeaveTypeRequest {
+  name?: string;
+  unit?: LeaveUnit;
+  requiresApproval?: boolean;
+  isActive?: boolean;
+}
+
+export interface LeaveRequestDto {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    fullName: string;
+    employeeNumber: string;
+  } | null;
+  leaveTypeId: string;
+  leaveType?: {
+    id: string;
+    name: string;
+    unit: LeaveUnit;
+  } | null;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: LeaveRequestStatus;
+  submittedAt: string;
+  decidedAt?: string | null;
+  decidedByUserId?: string | null;
+  decidedByUser?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  decisionNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateLeaveRequest {
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+}
+
+export interface AttendanceCorrectionRequestDto {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    fullName: string;
+    employeeNumber: string;
+  } | null;
+  attendanceRecordId?: string | null;
+  attendanceRecord?: {
+    id: string;
+    workDate: string;
+    checkInAt?: string | null;
+    checkOutAt?: string | null;
+    status: AttendanceStatus;
+  } | null;
+  requestedCheckInAt?: string | null;
+  requestedCheckOutAt?: string | null;
+  reason: string;
+  status: AttendanceCorrectionStatus;
+  submittedAt: string;
+  decidedAt?: string | null;
+  decidedByUserId?: string | null;
+  decidedByUser?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  decisionNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAttendanceCorrectionRequest {
+  attendanceRecordId?: string;
+  requestedCheckInAt?: string;
+  requestedCheckOutAt?: string;
+  reason: string;
+}
+
+export interface ApprovalDecisionRequest {
+  decision: 'APPROVED' | 'REJECTED';
+  note?: string;
+}
+
+export interface ApprovalActionDto {
+  id: string;
+  companyId: string;
+  requestType: ApprovalRequestType;
+  requestId: string;
+  action: ApprovalActionType;
+  actorUserId: string;
+  actorUser?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface PendingApprovalsResponse {
+  leaveRequests: LeaveRequestDto[];
+  attendanceCorrections: AttendanceCorrectionRequestDto[];
+  total: number;
+}
+
+/**
+ * Reports and Audit types
+ */
+export interface DailyBreakdownItem {
+  date: string;
+  total: number;
+  present: number;
+  late: number;
+  inProgress: number;
+  corrected: number;
+  flagged: number;
+}
+
+export interface AttendanceSummaryReportDto {
+  period: {
+    startDate: string;
+    endDate: string;
+  };
+  totalRecords: number;
+  presentCount: number;
+  lateCount: number;
+  inProgressCount: number;
+  correctedCount: number;
+  flaggedCount: number;
+  dailyBreakdown: DailyBreakdownItem[];
+}
+
+export interface LateArrivalItemDto {
+  attendanceId: string;
+  workDate: string;
+  employeeId: string;
+  employeeNumber: string;
+  employeeName: string;
+  departmentName?: string | null;
+  shiftName?: string | null;
+  shiftStartTime?: string | null;
+  checkInAt: string;
+  lateMinutes: number;
+}
+
+export interface LateArrivalReportDto {
+  period: {
+    startDate: string;
+    endDate: string;
+  };
+  totalLate: number;
+  items: LateArrivalItemDto[];
+}
+
+export interface AttendanceExportRequest {
+  startDate: string;
+  endDate: string;
+  format: 'csv' | 'json';
+  departmentId?: string;
+}
+
+export interface AttendanceExportResponse {
+  format: 'csv' | 'json';
+  filename: string;
+  recordCount: number;
+  data: string;
+}
+
+export interface AuditLogDto {
+  id: string;
+  companyId?: string | null;
+  actorUserId?: string | null;
+  actorUser?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  requestId?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AuditLogListQuery {
+  action?: string;
+  actorUserId?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+
 
 

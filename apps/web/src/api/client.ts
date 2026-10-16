@@ -14,6 +14,18 @@ import type {
   CreatePositionRequest,
   UpdatePositionRequest,
   PositionStatus,
+  AttendanceRecordDto,
+  AttendanceStatus,
+  LeaveRequestDto,
+  AttendanceCorrectionRequestDto,
+  PendingApprovalsResponse,
+  ApprovalDecisionRequest,
+  AttendanceSummaryReportDto,
+  LateArrivalReportDto,
+  AttendanceExportRequest,
+  AttendanceExportResponse,
+  AuditLogDto,
+  AuditLogListQuery,
 } from '@attendance/api-contracts';
 
 export class ApiError extends Error {
@@ -176,6 +188,143 @@ export class ApiClient {
     return this.request<EmployeeDto>(`/employees/${encodeURIComponent(id)}/status`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+  }
+
+  // Attendance
+  async getAttendance(params?: {
+    employeeId?: string;
+    workLocationId?: string;
+    status?: AttendanceStatus;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<ApiResponse<AttendanceRecordDto[]>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    if (params?.employeeId) searchParams.set('employeeId', params.employeeId);
+    if (params?.workLocationId) searchParams.set('workLocationId', params.workLocationId);
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+
+    const queryString = searchParams.toString();
+    return this.request<AttendanceRecordDto[]>(`/attendance${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  async getAttendanceById(id: string): Promise<ApiResponse<AttendanceRecordDto>> {
+    return this.request<AttendanceRecordDto>(`/attendance/${encodeURIComponent(id)}`, {
+      method: 'GET',
+    });
+  }
+
+  async flagAttendance(id: string, reason: string): Promise<ApiResponse<AttendanceRecordDto>> {
+    return this.request<AttendanceRecordDto>(`/attendance/${encodeURIComponent(id)}/flag`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async getAttendanceSelfieUrl(
+    recordId: string,
+    kind: 'check_in' | 'check_out'
+  ): Promise<ApiResponse<{ url: string; expiresAt: string }>> {
+    return this.request<{ url: string; expiresAt: string }>(
+      `/attendance/${encodeURIComponent(recordId)}/selfie/${kind}`,
+      { method: 'GET' }
+    );
+  }
+
+  // Approvals
+  async getPendingApprovals(
+    page?: number,
+    pageSize?: number
+  ): Promise<ApiResponse<PendingApprovalsResponse>> {
+    const searchParams = new URLSearchParams();
+    if (page) searchParams.set('page', String(page));
+    if (pageSize) searchParams.set('pageSize', String(pageSize));
+    const query = searchParams.toString();
+    return this.request<PendingApprovalsResponse>(
+      `/approvals/pending${query ? `?${query}` : ''}`,
+      { method: 'GET' }
+    );
+  }
+
+  async decideLeaveRequest(
+    id: string,
+    data: ApprovalDecisionRequest
+  ): Promise<ApiResponse<LeaveRequestDto>> {
+    return this.request<LeaveRequestDto>(
+      `/leave-requests/${encodeURIComponent(id)}/decision`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  }
+
+  async decideAttendanceCorrection(
+    id: string,
+    data: ApprovalDecisionRequest
+  ): Promise<ApiResponse<AttendanceCorrectionRequestDto>> {
+    return this.request<AttendanceCorrectionRequestDto>(
+      `/attendance-correction-requests/${encodeURIComponent(id)}/decision`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  }
+
+  // Reports
+  async getAttendanceSummary(
+    startDate: string,
+    endDate: string
+  ): Promise<ApiResponse<AttendanceSummaryReportDto>> {
+    const query = `?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
+    return this.request<AttendanceSummaryReportDto>(`/reports/attendance-summary${query}`, {
+      method: 'GET',
+    });
+  }
+
+  async getLateArrivals(
+    startDate: string,
+    endDate: string,
+    limit?: number
+  ): Promise<ApiResponse<LateArrivalReportDto>> {
+    const searchParams = new URLSearchParams({ startDate, endDate });
+    if (limit) searchParams.set('limit', String(limit));
+    return this.request<LateArrivalReportDto>(`/reports/late-arrivals?${searchParams.toString()}`, {
+      method: 'GET',
+    });
+  }
+
+  async exportAttendance(
+    data: AttendanceExportRequest
+  ): Promise<ApiResponse<AttendanceExportResponse>> {
+    return this.request<AttendanceExportResponse>('/reports/attendance-export', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Audit Logs
+  async getAuditLogs(params?: AuditLogListQuery): Promise<ApiResponse<AuditLogDto[]>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.actorUserId) searchParams.set('actorUserId', params.actorUserId);
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+
+    const query = searchParams.toString();
+    return this.request<AuditLogDto[]>(`/audit-logs${query ? `?${query}` : ''}`, {
+      method: 'GET',
     });
   }
 }

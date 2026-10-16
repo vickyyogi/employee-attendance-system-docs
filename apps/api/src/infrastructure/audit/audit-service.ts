@@ -13,7 +13,7 @@ export interface RecordAuditParams {
   metadata?: Record<string, unknown>;
 }
 
-const REDACTED_AUDIT_KEYS = new Set([
+export const REDACTED_AUDIT_KEYS = new Set([
   'password',
   'token',
   'refreshtoken',
@@ -21,20 +21,36 @@ const REDACTED_AUDIT_KEYS = new Set([
   'authorization',
   'secret',
   'cookie',
+  'credential',
+  'jwt',
+  'apikey',
+  'privatekey',
+  'bearer',
+  'selfie',
 ]);
 
-function sanitizeAuditMetadata(
+export function sanitizeAuditMetadata(
   metadata?: Record<string, unknown>
 ): Record<string, unknown> | undefined {
-  if (!metadata) return undefined;
+  if (!metadata || typeof metadata !== 'object') return undefined;
   const result: Record<string, unknown> = {};
+
   for (const [key, value] of Object.entries(metadata)) {
     if (REDACTED_AUDIT_KEYS.has(key.toLowerCase())) {
       result[key] = '[REDACTED]';
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = sanitizeAuditMetadata(value as Record<string, unknown>);
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((item) =>
+        item && typeof item === 'object'
+          ? sanitizeAuditMetadata(item as Record<string, unknown>)
+          : item
+      );
     } else {
       result[key] = value;
     }
   }
+
   return result;
 }
 

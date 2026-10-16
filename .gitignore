@@ -18,3 +18,6 @@ build/
 storage/
 apps/api/storage/
 *.tmp
+backups/
+*.dump
+*.sha256

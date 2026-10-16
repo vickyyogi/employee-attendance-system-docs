@@ -12,6 +12,11 @@ import { holidaysRouter } from '../modules/holidays/holidays.routes';
 import { selfieUploadsRouter } from '../modules/selfie-uploads/selfie-uploads.routes';
 import { storageRouter } from '../modules/storage/storage.routes';
 import { attendanceRouter } from '../modules/attendance/attendance.routes';
+import { leaveRouter } from '../modules/leave/leave.routes';
+import { attendanceCorrectionsRouter } from '../modules/attendance-corrections/attendance-corrections.routes';
+import { approvalsRouter } from '../modules/approvals/approvals.routes';
+import { reportsRouter } from '../modules/reports/reports.routes';
+import { auditLogsRouter } from '../modules/audit-logs/audit-logs.routes';
 
 const router = Router();
 
@@ -29,5 +34,10 @@ router.use(holidaysRouter);
 router.use('/attendance/selfie-uploads', selfieUploadsRouter);
 router.use('/storage', storageRouter);
 router.use('/attendance', attendanceRouter);
+router.use(leaveRouter);
+router.use(attendanceCorrectionsRouter);
+router.use(approvalsRouter);
+router.use('/reports', reportsRouter);
+router.use('/audit-logs', auditLogsRouter);
 
 export { router as v1Router };

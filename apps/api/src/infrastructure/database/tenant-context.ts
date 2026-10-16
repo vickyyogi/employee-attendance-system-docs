@@ -9,9 +9,15 @@ import {
   EmploymentStatus,
   AttendanceStatus,
   AttendanceEventType,
+  LeaveUnit,
+  LeaveRequestStatus,
+  AttendanceCorrectionStatus,
+  ApprovalRequestType,
+  ApprovalActionType,
   Prisma,
 } from '@prisma/client';
 import { prisma } from './prisma';
+import { recordAuditLog } from '../audit/audit-service';
 import {
   ForbiddenError,
   NotFoundError,
@@ -1780,6 +1786,986 @@ export function createTenantScope(context: TenantContext) {
           objectKey,
           record,
         };
+      },
+    },
+
+    leaveTypes: {
+      async list() {
+        return prisma.leaveType.findMany({
+          where: { companyId: context.companyId },
+          orderBy: { name: 'asc' },
+        });
+      },
+
+      async create(data: {
+        name: string;
+        unit?: LeaveUnit;
+        requiresApproval?: boolean;
+        isActive?: boolean;
+      }) {
+        const existing = await prisma.leaveType.findUnique({
+          where: {
+            companyId_name: {
+              companyId: context.companyId,
+              name: data.name.trim(),
+            },
+          },
+        });
+        if (existing) {
+          throw new ConflictError(
+            `Leave type with name '${data.name}' already exists in this company`
+          );
+        }
+
+        return prisma.leaveType.create({
+          data: {
+            companyId: context.companyId,
+            name: data.name.trim(),
+            unit: data.unit ?? LeaveUnit.DAYS,
+            requiresApproval: data.requiresApproval ?? true,
+            isActive: data.isActive ?? true,
+          },
+        });
+      },
+
+      async update(
+        id: string,
+        data: {
+          name?: string;
+          unit?: LeaveUnit;
+          requiresApproval?: boolean;
+          isActive?: boolean;
+        }
+      ) {
+        const leaveType = await prisma.leaveType.findUnique({ where: { id } });
+        if (!leaveType || leaveType.companyId !== context.companyId) {
+          throw new NotFoundError('Leave type not found');
+        }
+
+        if (data.name && data.name.trim() !== leaveType.name) {
+          const conflict = await prisma.leaveType.findUnique({
+            where: {
+              companyId_name: {
+                companyId: context.companyId,
+                name: data.name.trim(),
+              },
+            },
+          });
+          if (conflict) {
+            throw new ConflictError(
+              `Leave type with name '${data.name}' already exists in this company`
+            );
+          }
+        }
+
+        return prisma.leaveType.update({
+          where: { id },
+          data: {
+            name: data.name?.trim(),
+            unit: data.unit,
+            requiresApproval: data.requiresApproval,
+            isActive: data.isActive,
+          },
+        });
+      },
+    },
+
+    leaveRequests: {
+      async create(data: {
+        userId: string;
+        leaveTypeId: string;
+        startDate: Date;
+        endDate: Date;
+        reason: string;
+      }) {
+        const employee = await prisma.employee.findUnique({
+          where: {
+            companyId_userId: {
+              companyId: context.companyId,
+              userId: data.userId,
+            },
+          },
+        });
+        if (!employee || employee.employmentStatus !== EmploymentStatus.ACTIVE) {
+          throw new BadRequestError(
+            'Active employee profile required in this company to submit leave requests'
+          );
+        }
+
+        const leaveType = await prisma.leaveType.findUnique({
+          where: { id: data.leaveTypeId },
+        });
+        if (!leaveType || leaveType.companyId !== context.companyId || !leaveType.isActive) {
+          throw new NotFoundError('Leave type not found or inactive');
+        }
+
+        if (data.startDate > data.endDate) {
+          throw new UnprocessableEntityError('Start date must be before or equal to end date');
+        }
+
+        return prisma.leaveRequest.create({
+          data: {
+            companyId: context.companyId,
+            employeeId: employee.id,
+            leaveTypeId: leaveType.id,
+            startDate: data.startDate,
+            endDate: data.endDate,
+            reason: data.reason.trim(),
+            status: LeaveRequestStatus.PENDING,
+          },
+          include: {
+            employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+            leaveType: { select: { id: true, name: true, unit: true } },
+          },
+        });
+      },
+
+      async listOwn(options: {
+        userId: string;
+        status?: LeaveRequestStatus;
+        page?: number;
+        pageSize?: number;
+      }) {
+        const employee = await prisma.employee.findUnique({
+          where: {
+            companyId_userId: {
+              companyId: context.companyId,
+              userId: options.userId,
+            },
+          },
+        });
+        if (!employee) {
+          return {
+            records: [],
+            total: 0,
+            page: options.page ?? 1,
+            pageSize: options.pageSize ?? 20,
+          };
+        }
+
+        const page = Math.max(1, options.page ?? 1);
+        const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 20));
+        const skip = (page - 1) * pageSize;
+
+        const where: Prisma.LeaveRequestWhereInput = {
+          companyId: context.companyId,
+          employeeId: employee.id,
+          ...(options.status ? { status: options.status } : {}),
+        };
+
+        const [records, total] = await Promise.all([
+          prisma.leaveRequest.findMany({
+            where,
+            include: {
+              employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+              leaveType: { select: { id: true, name: true, unit: true } },
+              decidedByUser: { select: { id: true, fullName: true, email: true } },
+            },
+            orderBy: { submittedAt: 'desc' },
+            skip,
+            take: pageSize,
+          }),
+          prisma.leaveRequest.count({ where }),
+        ]);
+
+        return { records, total, page, pageSize };
+      },
+
+      async getById(id: string, userId: string, isPrivileged: boolean) {
+        const request = await prisma.leaveRequest.findUnique({
+          where: { id },
+          include: {
+            employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+            leaveType: { select: { id: true, name: true, unit: true } },
+            decidedByUser: { select: { id: true, fullName: true, email: true } },
+          },
+        });
+        if (!request || request.companyId !== context.companyId) {
+          throw new NotFoundError('Leave request not found');
+        }
+
+        if (!isPrivileged && request.employee.userId !== userId) {
+          throw new NotFoundError('Leave request not found');
+        }
+
+        return request;
+      },
+
+      async cancel(id: string, userId: string) {
+        const request = await prisma.leaveRequest.findUnique({
+          where: { id },
+          include: { employee: true },
+        });
+        if (!request || request.companyId !== context.companyId) {
+          throw new NotFoundError('Leave request not found');
+        }
+
+        if (request.employee.userId !== userId) {
+          throw new ForbiddenError('You can only cancel your own leave requests');
+        }
+
+        if (request.status !== LeaveRequestStatus.PENDING) {
+          throw new ConflictError(
+            `Cannot cancel a leave request with status '${request.status}'`
+          );
+        }
+
+        return prisma.leaveRequest.update({
+          where: { id },
+          data: { status: LeaveRequestStatus.CANCELLED },
+          include: {
+            employee: { select: { id: true, fullName: true, employeeNumber: true } },
+            leaveType: { select: { id: true, name: true, unit: true } },
+          },
+        });
+      },
+
+      async decide(
+        id: string,
+        actorUserId: string,
+        decision: 'APPROVED' | 'REJECTED',
+        note?: string
+      ) {
+        const leaveReq = await prisma.leaveRequest.findUnique({
+          where: { id },
+          include: { employee: true },
+        });
+        if (!leaveReq || leaveReq.companyId !== context.companyId) {
+          throw new NotFoundError('Leave request not found');
+        }
+
+        if (leaveReq.status !== LeaveRequestStatus.PENDING) {
+          throw new ConflictError(
+            `Leave request has already been decided with status '${leaveReq.status}'`
+          );
+        }
+
+        // Mandatory self-approval prevention
+        if (leaveReq.employee.userId === actorUserId) {
+          throw new ForbiddenError(
+            'Self-approval is strictly prohibited: you cannot approve or reject your own request'
+          );
+        }
+
+        return prisma.$transaction(async (tx) => {
+          const updateResult = await tx.leaveRequest.updateMany({
+            where: {
+              id,
+              companyId: context.companyId,
+              status: LeaveRequestStatus.PENDING,
+            },
+            data: {
+              status:
+                decision === 'APPROVED'
+                  ? LeaveRequestStatus.APPROVED
+                  : LeaveRequestStatus.REJECTED,
+              decidedAt: new Date(),
+              decidedByUserId: actorUserId,
+              decisionNote: note ?? null,
+            },
+          });
+
+          if (updateResult.count === 0) {
+            throw new ConflictError(
+              'Leave request has already been decided or is no longer pending'
+            );
+          }
+
+          const updated = await tx.leaveRequest.findUniqueOrThrow({
+            where: { id },
+            include: {
+              employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+              leaveType: { select: { id: true, name: true, unit: true } },
+              decidedByUser: { select: { id: true, fullName: true, email: true } },
+            },
+          });
+
+          await tx.approvalAction.create({
+            data: {
+              companyId: context.companyId,
+              requestType: ApprovalRequestType.LEAVE,
+              requestId: id,
+              action:
+                decision === 'APPROVED'
+                  ? ApprovalActionType.APPROVED
+                  : ApprovalActionType.REJECTED,
+              actorUserId,
+              note: note ?? null,
+            },
+          });
+
+          return updated;
+        });
+      },
+    },
+
+    attendanceCorrections: {
+      async create(data: {
+        userId: string;
+        attendanceRecordId?: string;
+        requestedCheckInAt?: Date;
+        requestedCheckOutAt?: Date;
+        reason: string;
+      }) {
+        const employee = await prisma.employee.findUnique({
+          where: {
+            companyId_userId: {
+              companyId: context.companyId,
+              userId: data.userId,
+            },
+          },
+        });
+        if (!employee || employee.employmentStatus !== EmploymentStatus.ACTIVE) {
+          throw new BadRequestError(
+            'Active employee profile required in this company to submit attendance corrections'
+          );
+        }
+
+        if (data.attendanceRecordId) {
+          const record = await prisma.attendanceRecord.findUnique({
+            where: { id: data.attendanceRecordId },
+          });
+          if (
+            !record ||
+            record.companyId !== context.companyId ||
+            record.employeeId !== employee.id
+          ) {
+            throw new NotFoundError('Attendance record not found for this employee');
+          }
+        }
+
+        if (data.requestedCheckInAt && data.requestedCheckOutAt) {
+          if (data.requestedCheckInAt > data.requestedCheckOutAt) {
+            throw new UnprocessableEntityError(
+              'Requested check-in time must be before requested check-out time'
+            );
+          }
+        }
+
+        return prisma.attendanceCorrectionRequest.create({
+          data: {
+            companyId: context.companyId,
+            employeeId: employee.id,
+            attendanceRecordId: data.attendanceRecordId ?? null,
+            requestedCheckInAt: data.requestedCheckInAt ?? null,
+            requestedCheckOutAt: data.requestedCheckOutAt ?? null,
+            reason: data.reason.trim(),
+            status: AttendanceCorrectionStatus.PENDING,
+          },
+          include: {
+            employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+            attendanceRecord: {
+              select: {
+                id: true,
+                workDate: true,
+                checkInAt: true,
+                checkOutAt: true,
+                status: true,
+              },
+            },
+          },
+        });
+      },
+
+      async listOwn(options: {
+        userId: string;
+        status?: AttendanceCorrectionStatus;
+        page?: number;
+        pageSize?: number;
+      }) {
+        const employee = await prisma.employee.findUnique({
+          where: {
+            companyId_userId: {
+              companyId: context.companyId,
+              userId: options.userId,
+            },
+          },
+        });
+        if (!employee) {
+          return {
+            records: [],
+            total: 0,
+            page: options.page ?? 1,
+            pageSize: options.pageSize ?? 20,
+          };
+        }
+
+        const page = Math.max(1, options.page ?? 1);
+        const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 20));
+        const skip = (page - 1) * pageSize;
+
+        const where: Prisma.AttendanceCorrectionRequestWhereInput = {
+          companyId: context.companyId,
+          employeeId: employee.id,
+          ...(options.status ? { status: options.status } : {}),
+        };
+
+        const [records, total] = await Promise.all([
+          prisma.attendanceCorrectionRequest.findMany({
+            where,
+            include: {
+              employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+              attendanceRecord: {
+                select: {
+                  id: true,
+                  workDate: true,
+                  checkInAt: true,
+                  checkOutAt: true,
+                  status: true,
+                },
+              },
+              decidedByUser: { select: { id: true, fullName: true, email: true } },
+            },
+            orderBy: { submittedAt: 'desc' },
+            skip,
+            take: pageSize,
+          }),
+          prisma.attendanceCorrectionRequest.count({ where }),
+        ]);
+
+        return { records, total, page, pageSize };
+      },
+
+      async getById(id: string, userId: string, isPrivileged: boolean) {
+        const request = await prisma.attendanceCorrectionRequest.findUnique({
+          where: { id },
+          include: {
+            employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+            attendanceRecord: {
+              select: {
+                id: true,
+                workDate: true,
+                checkInAt: true,
+                checkOutAt: true,
+                status: true,
+              },
+            },
+            decidedByUser: { select: { id: true, fullName: true, email: true } },
+          },
+        });
+        if (!request || request.companyId !== context.companyId) {
+          throw new NotFoundError('Attendance correction request not found');
+        }
+
+        if (!isPrivileged && request.employee.userId !== userId) {
+          throw new NotFoundError('Attendance correction request not found');
+        }
+
+        return request;
+      },
+
+      async decide(
+        id: string,
+        actorUserId: string,
+        decision: 'APPROVED' | 'REJECTED',
+        note?: string
+      ) {
+        const request = await prisma.attendanceCorrectionRequest.findUnique({
+          where: { id },
+          include: { employee: true },
+        });
+        if (!request || request.companyId !== context.companyId) {
+          throw new NotFoundError('Attendance correction request not found');
+        }
+
+        if (request.status !== AttendanceCorrectionStatus.PENDING) {
+          throw new ConflictError(
+            `Attendance correction request has already been decided with status '${request.status}'`
+          );
+        }
+
+        // Mandatory self-approval prevention
+        if (request.employee.userId === actorUserId) {
+          throw new ForbiddenError(
+            'Self-approval is strictly prohibited: you cannot approve or reject your own request'
+          );
+        }
+
+        return prisma.$transaction(async (tx) => {
+          const updateResult = await tx.attendanceCorrectionRequest.updateMany({
+            where: {
+              id,
+              companyId: context.companyId,
+              status: AttendanceCorrectionStatus.PENDING,
+            },
+            data: {
+              status:
+                decision === 'APPROVED'
+                  ? AttendanceCorrectionStatus.APPROVED
+                  : AttendanceCorrectionStatus.REJECTED,
+              decidedAt: new Date(),
+              decidedByUserId: actorUserId,
+              decisionNote: note ?? null,
+            },
+          });
+
+          if (updateResult.count === 0) {
+            throw new ConflictError(
+              'Attendance correction request has already been decided or is no longer pending'
+            );
+          }
+
+          const updated = await tx.attendanceCorrectionRequest.findUniqueOrThrow({
+            where: { id },
+            include: {
+              employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+              attendanceRecord: {
+                select: {
+                  id: true,
+                  workDate: true,
+                  checkInAt: true,
+                  checkOutAt: true,
+                  status: true,
+                },
+              },
+              decidedByUser: { select: { id: true, fullName: true, email: true } },
+            },
+          });
+
+          await tx.approvalAction.create({
+            data: {
+              companyId: context.companyId,
+              requestType: ApprovalRequestType.ATTENDANCE_CORRECTION,
+              requestId: id,
+              action:
+                decision === 'APPROVED'
+                  ? ApprovalActionType.APPROVED
+                  : ApprovalActionType.REJECTED,
+              actorUserId,
+              note: note ?? null,
+            },
+          });
+
+          // If approved and attached to an attendance record, update the attendance record and create an audit event
+          if (decision === 'APPROVED' && request.attendanceRecordId) {
+            const currentRecord = await tx.attendanceRecord.findUnique({
+              where: { id: request.attendanceRecordId },
+            });
+
+            if (currentRecord && currentRecord.companyId === context.companyId) {
+              const newCheckIn = request.requestedCheckInAt ?? currentRecord.checkInAt;
+              const newCheckOut = request.requestedCheckOutAt ?? currentRecord.checkOutAt;
+
+              await tx.attendanceRecord.update({
+                where: { id: request.attendanceRecordId },
+                data: {
+                  checkInAt: newCheckIn,
+                  checkOutAt: newCheckOut,
+                  status: AttendanceStatus.CORRECTED,
+                },
+              });
+
+              await tx.attendanceEvent.create({
+                data: {
+                  companyId: context.companyId,
+                  attendanceRecordId: request.attendanceRecordId,
+                  eventType: AttendanceEventType.CORRECTION,
+                  actorUserId,
+                  metadata: {
+                    correctionRequestId: id,
+                    previousCheckInAt: currentRecord.checkInAt?.toISOString() ?? null,
+                    previousCheckOutAt: currentRecord.checkOutAt?.toISOString() ?? null,
+                    previousStatus: currentRecord.status,
+                    newCheckInAt: newCheckIn?.toISOString() ?? null,
+                    newCheckOutAt: newCheckOut?.toISOString() ?? null,
+                    reason: request.reason,
+                    decisionNote: note ?? null,
+                  },
+                },
+              });
+            }
+          }
+
+          return updated;
+        });
+      },
+    },
+
+    approvals: {
+      async listPending(options?: { page?: number; pageSize?: number }) {
+        const page = Math.max(1, options?.page ?? 1);
+        const pageSize = Math.min(100, Math.max(1, options?.pageSize ?? 20));
+
+        const [leaveRequests, leaveCount, corrections, correctionCount] =
+          await Promise.all([
+            prisma.leaveRequest.findMany({
+              where: {
+                companyId: context.companyId,
+                status: LeaveRequestStatus.PENDING,
+              },
+              include: {
+                employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+                leaveType: { select: { id: true, name: true, unit: true } },
+              },
+              orderBy: { submittedAt: 'desc' },
+              take: pageSize,
+            }),
+            prisma.leaveRequest.count({
+              where: {
+                companyId: context.companyId,
+                status: LeaveRequestStatus.PENDING,
+              },
+            }),
+            prisma.attendanceCorrectionRequest.findMany({
+              where: {
+                companyId: context.companyId,
+                status: AttendanceCorrectionStatus.PENDING,
+              },
+              include: {
+                employee: { select: { id: true, fullName: true, employeeNumber: true, userId: true } },
+                attendanceRecord: {
+                  select: {
+                    id: true,
+                    workDate: true,
+                    checkInAt: true,
+                    checkOutAt: true,
+                    status: true,
+                  },
+                },
+              },
+              orderBy: { submittedAt: 'desc' },
+              take: pageSize,
+            }),
+            prisma.attendanceCorrectionRequest.count({
+              where: {
+                companyId: context.companyId,
+                status: AttendanceCorrectionStatus.PENDING,
+              },
+            }),
+          ]);
+
+        return {
+          leaveRequests,
+          attendanceCorrections: corrections,
+          total: leaveCount + correctionCount,
+          page,
+          pageSize,
+        };
+      },
+    },
+
+    reports: {
+      async getAttendanceSummary(startDate: string, endDate: string) {
+        const start = new Date(`${startDate}T00:00:00.000Z`);
+        const end = new Date(`${endDate}T23:59:59.999Z`);
+
+        const records = await prisma.attendanceRecord.findMany({
+          where: {
+            companyId: context.companyId,
+            workDate: {
+              gte: start,
+              lte: end,
+            },
+          },
+          select: {
+            id: true,
+            workDate: true,
+            status: true,
+          },
+          orderBy: { workDate: 'asc' },
+        });
+
+        let presentCount = 0;
+        let lateCount = 0;
+        let inProgressCount = 0;
+        let correctedCount = 0;
+        let flaggedCount = 0;
+
+        const dailyMap = new Map<
+          string,
+          {
+            date: string;
+            total: number;
+            present: number;
+            late: number;
+            inProgress: number;
+            corrected: number;
+            flagged: number;
+          }
+        >();
+
+        for (const r of records) {
+          const dateStr = r.workDate.toISOString().substring(0, 10);
+          if (!dailyMap.has(dateStr)) {
+            dailyMap.set(dateStr, {
+              date: dateStr,
+              total: 0,
+              present: 0,
+              late: 0,
+              inProgress: 0,
+              corrected: 0,
+              flagged: 0,
+            });
+          }
+
+          const daily = dailyMap.get(dateStr)!;
+          daily.total++;
+
+          switch (r.status) {
+            case AttendanceStatus.PRESENT:
+              presentCount++;
+              daily.present++;
+              break;
+            case AttendanceStatus.LATE:
+              lateCount++;
+              daily.late++;
+              break;
+            case AttendanceStatus.IN_PROGRESS:
+              inProgressCount++;
+              daily.inProgress++;
+              break;
+            case AttendanceStatus.CORRECTED:
+              correctedCount++;
+              daily.corrected++;
+              break;
+            case AttendanceStatus.FLAGGED:
+              flaggedCount++;
+              daily.flagged++;
+              break;
+          }
+        }
+
+        return {
+          period: { startDate, endDate },
+          totalRecords: records.length,
+          presentCount,
+          lateCount,
+          inProgressCount,
+          correctedCount,
+          flaggedCount,
+          dailyBreakdown: Array.from(dailyMap.values()),
+        };
+      },
+
+      async getLateArrivals(startDate: string, endDate: string, limit = 100) {
+        const start = new Date(`${startDate}T00:00:00.000Z`);
+        const end = new Date(`${endDate}T23:59:59.999Z`);
+
+        const records = await prisma.attendanceRecord.findMany({
+          where: {
+            companyId: context.companyId,
+            status: AttendanceStatus.LATE,
+            workDate: {
+              gte: start,
+              lte: end,
+            },
+          },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                fullName: true,
+                employeeNumber: true,
+                department: { select: { name: true } },
+              },
+            },
+            shift: {
+              select: {
+                id: true,
+                name: true,
+                startTimeLocal: true,
+              },
+            },
+          },
+          orderBy: { checkInAt: 'desc' },
+          take: limit,
+        });
+
+        const items = records.map((r) => {
+          let lateMinutes = 0;
+          if (r.checkInAt && r.shift?.startTimeLocal) {
+            const checkInDate = new Date(r.checkInAt);
+            const [hours, minutes] = r.shift.startTimeLocal.split(':').map(Number);
+            const shiftStartMinutes = hours * 60 + minutes;
+            const checkInMinutes = checkInDate.getUTCHours() * 60 + checkInDate.getUTCMinutes();
+            lateMinutes = Math.max(1, checkInMinutes - shiftStartMinutes);
+          }
+
+          return {
+            attendanceId: r.id,
+            workDate: r.workDate.toISOString().substring(0, 10),
+            employeeId: r.employeeId,
+            employeeNumber: r.employee.employeeNumber,
+            employeeName: r.employee.fullName,
+            departmentName: r.employee.department?.name || null,
+            shiftName: r.shift?.name || null,
+            shiftStartTime: r.shift?.startTimeLocal || null,
+            checkInAt: r.checkInAt ? r.checkInAt.toISOString() : r.createdAt.toISOString(),
+            lateMinutes: lateMinutes > 0 ? lateMinutes : 15,
+          };
+        });
+
+        return {
+          period: { startDate, endDate },
+          totalLate: records.length,
+          items,
+        };
+      },
+
+      async exportAttendance(
+        query: {
+          startDate: string;
+          endDate: string;
+          format: 'csv' | 'json';
+          departmentId?: string;
+        },
+        actorUserId: string,
+        meta?: { ip?: string; userAgent?: string; requestId?: string }
+      ) {
+        const start = new Date(`${query.startDate}T00:00:00.000Z`);
+        const end = new Date(`${query.endDate}T23:59:59.999Z`);
+
+        const where: Prisma.AttendanceRecordWhereInput = {
+          companyId: context.companyId,
+          workDate: {
+            gte: start,
+            lte: end,
+          },
+        };
+
+        if (query.departmentId) {
+          where.employee = {
+            departmentId: query.departmentId,
+          };
+        }
+
+        const records = await prisma.attendanceRecord.findMany({
+          where,
+          include: {
+            employee: {
+              select: {
+                id: true,
+                fullName: true,
+                employeeNumber: true,
+                department: { select: { name: true } },
+              },
+            },
+            shift: { select: { name: true, startTimeLocal: true, endTimeLocal: true } },
+            workLocation: { select: { name: true } },
+          },
+          orderBy: { workDate: 'asc' },
+        });
+
+        let dataString = '';
+        if (query.format === 'csv') {
+          const headers = [
+            'Employee Number',
+            'Employee Name',
+            'Department',
+            'Work Date',
+            'Shift',
+            'Check In At',
+            'Check Out At',
+            'Status',
+            'Work Location',
+            'Flag Reason',
+          ];
+          const rows = records.map((r) => [
+            `"${r.employee.employeeNumber}"`,
+            `"${r.employee.fullName.replace(/"/g, '""')}"`,
+            `"${(r.employee.department?.name || '').replace(/"/g, '""')}"`,
+            `"${r.workDate.toISOString().substring(0, 10)}"`,
+            `"${r.shift?.name || ''}"`,
+            `"${r.checkInAt ? r.checkInAt.toISOString() : ''}"`,
+            `"${r.checkOutAt ? r.checkOutAt.toISOString() : ''}"`,
+            `"${r.status}"`,
+            `"${(r.workLocation?.name || '').replace(/"/g, '""')}"`,
+            `"${(r.flagReason || '').replace(/"/g, '""')}"`,
+          ]);
+          dataString = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+        } else {
+          dataString = JSON.stringify(
+            records.map((r) => ({
+              id: r.id,
+              employeeNumber: r.employee.employeeNumber,
+              employeeName: r.employee.fullName,
+              departmentName: r.employee.department?.name || null,
+              workDate: r.workDate.toISOString().substring(0, 10),
+              shiftName: r.shift?.name || null,
+              checkInAt: r.checkInAt?.toISOString() || null,
+              checkOutAt: r.checkOutAt?.toISOString() || null,
+              status: r.status,
+              workLocationName: r.workLocation?.name || null,
+              flagReason: r.flagReason || null,
+            })),
+            null,
+            2
+          );
+        }
+
+        // Audit the export action
+        await recordAuditLog({
+          companyId: context.companyId,
+          actorUserId,
+          action: 'REPORT_EXPORTED',
+          entityType: 'report',
+          entityId: null,
+          requestId: meta?.requestId,
+          ipAddress: meta?.ip,
+          userAgent: meta?.userAgent,
+          metadata: {
+            startDate: query.startDate,
+            endDate: query.endDate,
+            format: query.format,
+            departmentId: query.departmentId ?? null,
+            recordCount: records.length,
+          },
+        });
+
+        return {
+          format: query.format,
+          filename: `attendance-export-${query.startDate}-to-${query.endDate}.${query.format}`,
+          recordCount: records.length,
+          data: dataString,
+        };
+      },
+    },
+
+    auditLogs: {
+      async search(query: {
+        action?: string;
+        actorUserId?: string;
+        startDate?: string;
+        endDate?: string;
+        page?: number;
+        pageSize?: number;
+      }) {
+        const where: Prisma.AuditLogWhereInput = {
+          companyId: context.companyId,
+        };
+
+        if (query.action) where.action = query.action;
+        if (query.actorUserId) where.actorUserId = query.actorUserId;
+        if (query.startDate || query.endDate) {
+          where.createdAt = {};
+          if (query.startDate) where.createdAt.gte = new Date(`${query.startDate}T00:00:00.000Z`);
+          if (query.endDate) where.createdAt.lte = new Date(`${query.endDate}T23:59:59.999Z`);
+        }
+
+        const page = Math.max(1, query.page ?? 1);
+        const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+        const skip = (page - 1) * pageSize;
+
+        const [logs, total] = await Promise.all([
+          prisma.auditLog.findMany({
+            where,
+            include: {
+              actor: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: pageSize,
+          }),
+          prisma.auditLog.count({ where }),
+        ]);
+
+        return { logs, total, page, pageSize };
       },
     },
   };
