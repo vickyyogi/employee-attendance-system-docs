@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../../api/client';
 import { Modal } from '../../components/Modal';
 import type {
@@ -15,6 +15,9 @@ interface ApprovalQueueProps {
 type TabType = 'ALL' | 'LEAVE' | 'CORRECTIONS';
 
 export const ApprovalQueue: React.FC<ApprovalQueueProps> = ({ currentUserId, onNotify }) => {
+  const notifyRef = useRef(onNotify);
+  notifyRef.current = onNotify;
+
   const [activeTab, setActiveTab] = useState<TabType>('ALL');
   const [data, setData] = useState<PendingApprovalsResponse>({
     leaveRequests: [],
@@ -43,16 +46,20 @@ export const ApprovalQueue: React.FC<ApprovalQueueProps> = ({ currentUserId, onN
   });
 
   const fetchApprovals = useCallback(async () => {
+    if (!apiClient.getToken()) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const res = await apiClient.getPendingApprovals(1, 100);
       setData(res.data);
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : 'Failed to fetch pending approvals');
+      notifyRef.current('error', err instanceof Error ? err.message : 'Failed to fetch pending approvals');
     } finally {
       setLoading(false);
     }
-  }, [onNotify]);
+  }, []);
 
   useEffect(() => {
     fetchApprovals();
@@ -86,11 +93,11 @@ export const ApprovalQueue: React.FC<ApprovalQueueProps> = ({ currentUserId, onN
       } else {
         await apiClient.decideAttendanceCorrection(id, { decision: action, note: note.trim() || undefined });
       }
-      onNotify('success', `Request has been ${action.toLowerCase()} successfully`);
+      notifyRef.current('success', `Request has been ${action.toLowerCase()} successfully`);
       setDecisionModal((prev) => ({ ...prev, open: false }));
       await fetchApprovals();
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : `Failed to process decision`);
+      notifyRef.current('error', err instanceof Error ? err.message : `Failed to process decision`);
     } finally {
       setDecisionModal((prev) => ({ ...prev, submitting: false }));
     }

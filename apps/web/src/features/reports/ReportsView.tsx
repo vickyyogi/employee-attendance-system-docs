@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../../api/client';
 import type {
   AttendanceSummaryReportDto,
@@ -17,6 +17,9 @@ const getFirstDayOfMonth = () => {
 const getTodayString = () => new Date().toISOString().substring(0, 10);
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ onNotify }) => {
+  const notifyRef = useRef(onNotify);
+  notifyRef.current = onNotify;
+
   const [startDate, setStartDate] = useState<string>(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState<string>(getTodayString());
 
@@ -27,8 +30,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNotify }) => {
   const [exportingJson, setExportingJson] = useState(false);
 
   const fetchReports = useCallback(async () => {
+    if (!apiClient.getToken()) {
+      setLoading(false);
+      return;
+    }
+
     if (startDate > endDate) {
-      onNotify('error', 'Start date must be less than or equal to End date');
+      notifyRef.current('error', 'Start date must be less than or equal to End date');
       return;
     }
 
@@ -41,11 +49,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNotify }) => {
       setSummary(summaryRes.data);
       setLateArrivals(lateRes.data);
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : 'Failed to load report data');
+      notifyRef.current('error', err instanceof Error ? err.message : 'Failed to load report data');
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, onNotify]);
+  }, [startDate, endDate]);
 
   useEffect(() => {
     fetchReports();
@@ -53,7 +61,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNotify }) => {
 
   const handleExport = async (format: 'csv' | 'json') => {
     if (startDate > endDate) {
-      onNotify('error', 'Start date must be less than or equal to End date');
+      notifyRef.current('error', 'Start date must be less than or equal to End date');
       return;
     }
 
@@ -81,9 +89,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ onNotify }) => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      onNotify('success', `Exported ${recordCount} records to ${filename}. Audit log recorded.`);
+      notifyRef.current('success', `Exported ${recordCount} records to ${filename}. Audit log recorded.`);
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : 'Failed to export report');
+      notifyRef.current('error', err instanceof Error ? err.message : 'Failed to export report');
     } finally {
       setExporting(false);
     }

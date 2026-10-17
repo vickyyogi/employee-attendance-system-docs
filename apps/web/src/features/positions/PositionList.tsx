@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../../api/client';
 import { PositionModal } from './PositionModal';
 import type { PositionDto, PositionStatus } from '@attendance/api-contracts';
@@ -8,6 +8,9 @@ interface PositionListProps {
 }
 
 export const PositionList: React.FC<PositionListProps> = ({ onNotify }) => {
+  const notifyRef = useRef(onNotify);
+  notifyRef.current = onNotify;
+
   const [positions, setPositions] = useState<PositionDto[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(false);
@@ -15,17 +18,21 @@ export const PositionList: React.FC<PositionListProps> = ({ onNotify }) => {
   const [selectedPos, setSelectedPos] = useState<PositionDto | null>(null);
 
   const fetchPositions = useCallback(async () => {
+    if (!apiClient.getToken()) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const filter = statusFilter === 'ALL' ? undefined : (statusFilter as PositionStatus);
       const res = await apiClient.getPositions(filter);
       setPositions(res.data);
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : 'Failed to fetch positions');
+      notifyRef.current('error', err instanceof Error ? err.message : 'Failed to fetch positions');
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, onNotify]);
+  }, [statusFilter]);
 
   useEffect(() => {
     fetchPositions();
@@ -34,10 +41,10 @@ export const PositionList: React.FC<PositionListProps> = ({ onNotify }) => {
   const handleCreateOrUpdate = async (data: { name: string; status?: PositionStatus }) => {
     if (selectedPos) {
       await apiClient.updatePosition(selectedPos.id, data);
-      onNotify('success', `Position '${data.name}' updated successfully`);
+      notifyRef.current('success', `Position '${data.name}' updated successfully`);
     } else {
       await apiClient.createPosition({ name: data.name });
-      onNotify('success', `Position '${data.name}' created successfully`);
+      notifyRef.current('success', `Position '${data.name}' created successfully`);
     }
     await fetchPositions();
   };

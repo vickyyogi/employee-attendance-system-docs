@@ -65,6 +65,77 @@ export class ApiClient {
     return this.companyId;
   }
 
+  // Auth methods
+  async login(email: string, password: string): Promise<ApiResponse<{
+    user: { id: string; email: string; fullName: string; status: string };
+    tokens: { accessToken: string; refreshToken: string; expiresIn: string };
+  }>> {
+    const res = await this.request<{
+      user: { id: string; email: string; fullName: string; status: string };
+      tokens: { accessToken: string; refreshToken: string; expiresIn: string };
+    }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    if (res.data?.tokens?.accessToken) {
+      this.setToken(res.data.tokens.accessToken);
+    }
+    return res;
+  }
+
+  async getMe(): Promise<ApiResponse<{
+    user: { id: string; email: string; fullName: string; phone?: string | null; status: string };
+    memberships: Array<{
+      id: string;
+      companyId: string;
+      companyName: string;
+      companySlug: string;
+      role: string;
+      status: string;
+    }>;
+    activeCompany?: {
+      id: string;
+      name: string;
+      slug: string;
+      role: string;
+      permissions: string[];
+    } | null;
+  }>> {
+    return this.request('/auth/me', { method: 'GET' });
+  }
+
+  async selectActiveCompany(companyId: string): Promise<ApiResponse<{
+    activeCompany: {
+      id: string;
+      name: string;
+      slug: string;
+      role: string;
+      permissions: string[];
+    };
+    accessToken: string;
+  }>> {
+    const res = await this.request<{
+      activeCompany: {
+        id: string;
+        name: string;
+        slug: string;
+        role: string;
+        permissions: string[];
+      };
+      accessToken: string;
+    }>('/auth/active-company', {
+      method: 'POST',
+      body: JSON.stringify({ companyId }),
+    });
+    if (res.data?.accessToken) {
+      this.setToken(res.data.accessToken);
+    }
+    if (res.data?.activeCompany?.id) {
+      this.setCompanyId(res.data.activeCompany.id);
+    }
+    return res;
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

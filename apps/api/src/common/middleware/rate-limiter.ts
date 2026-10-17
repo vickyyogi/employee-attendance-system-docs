@@ -11,7 +11,8 @@ export interface RateLimiterOptions {
 
 export function createRateLimiter(options?: RateLimiterOptions): RateLimitRequestHandler {
   const windowMs = options?.windowMs ?? env.RATE_LIMIT_WINDOW_MS;
-  const max = options?.max ?? env.RATE_LIMIT_MAX;
+  const defaultMax = env.NODE_ENV === 'development' ? 2000 : env.RATE_LIMIT_MAX;
+  const max = options?.max ?? defaultMax;
   const message = options?.message ?? 'Too many requests, please try again later';
   const skipInTest = options?.skipInTest ?? true;
 

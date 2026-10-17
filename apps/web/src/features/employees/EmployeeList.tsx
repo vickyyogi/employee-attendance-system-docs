@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../../api/client';
 import { EmployeeModal } from './EmployeeModal';
 import { EmployeeStatusModal } from './EmployeeStatusModal';
@@ -17,6 +17,9 @@ interface EmployeeListProps {
 }
 
 export const EmployeeList: React.FC<EmployeeListProps> = ({ onNotify }) => {
+  const notifyRef = useRef(onNotify);
+  notifyRef.current = onNotify;
+
   const [employees, setEmployees] = useState<EmployeeDto[]>([]);
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
   const [positions, setPositions] = useState<PositionDto[]>([]);
@@ -43,6 +46,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ onNotify }) => {
 
   // Load auxiliary data (departments and positions for dropdowns)
   const fetchAuxiliaryData = useCallback(async () => {
+    if (!apiClient.getToken()) return;
     try {
       const [deptRes, posRes] = await Promise.all([
         apiClient.getDepartments(),
@@ -56,6 +60,10 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ onNotify }) => {
   }, []);
 
   const fetchEmployees = useCallback(async () => {
+    if (!apiClient.getToken()) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const res = await apiClient.getEmployees({
@@ -72,11 +80,11 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ onNotify }) => {
         setTotal(res.meta.total);
       }
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : 'Failed to fetch employees');
+      notifyRef.current('error', err instanceof Error ? err.message : 'Failed to fetch employees');
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, selectedDeptId, selectedPosId, selectedStatus, onNotify]);
+  }, [page, pageSize, search, selectedDeptId, selectedPosId, selectedStatus]);
 
   useEffect(() => {
     fetchAuxiliaryData();
@@ -89,10 +97,10 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ onNotify }) => {
   const handleCreateOrUpdate = async (data: CreateEmployeeRequest | UpdateEmployeeRequest) => {
     if (selectedEmployee) {
       await apiClient.updateEmployee(selectedEmployee.id, data as UpdateEmployeeRequest);
-      onNotify('success', `Employee '${selectedEmployee.fullName}' updated successfully`);
+      notifyRef.current('success', `Employee '${selectedEmployee.fullName}' updated successfully`);
     } else {
       await apiClient.createEmployee(data as CreateEmployeeRequest);
-      onNotify('success', `Employee '${(data as CreateEmployeeRequest).fullName}' created successfully`);
+      notifyRef.current('success', `Employee '${(data as CreateEmployeeRequest).fullName}' created successfully`);
     }
     await fetchEmployees();
   };
@@ -100,7 +108,7 @@ export const EmployeeList: React.FC<EmployeeListProps> = ({ onNotify }) => {
   const handleStatusChange = async (data: { status: EmploymentStatus; terminationDate?: string | null }) => {
     if (!statusEmployee) return;
     await apiClient.updateEmployeeStatus(statusEmployee.id, data);
-    onNotify('success', `Status for '${statusEmployee.fullName}' updated to ${data.status}`);
+    notifyRef.current('success', `Status for '${statusEmployee.fullName}' updated to ${data.status}`);
     await fetchEmployees();
   };
 

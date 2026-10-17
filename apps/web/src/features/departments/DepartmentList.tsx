@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../../api/client';
 import { DepartmentModal } from './DepartmentModal';
 import type { DepartmentDto, DepartmentStatus } from '@attendance/api-contracts';
@@ -8,6 +8,9 @@ interface DepartmentListProps {
 }
 
 export const DepartmentList: React.FC<DepartmentListProps> = ({ onNotify }) => {
+  const notifyRef = useRef(onNotify);
+  notifyRef.current = onNotify;
+
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(false);
@@ -15,17 +18,21 @@ export const DepartmentList: React.FC<DepartmentListProps> = ({ onNotify }) => {
   const [selectedDept, setSelectedDept] = useState<DepartmentDto | null>(null);
 
   const fetchDepartments = useCallback(async () => {
+    if (!apiClient.getToken()) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const filter = statusFilter === 'ALL' ? undefined : (statusFilter as DepartmentStatus);
       const res = await apiClient.getDepartments(filter);
       setDepartments(res.data);
     } catch (err) {
-      onNotify('error', err instanceof Error ? err.message : 'Failed to fetch departments');
+      notifyRef.current('error', err instanceof Error ? err.message : 'Failed to fetch departments');
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, onNotify]);
+  }, [statusFilter]);
 
   useEffect(() => {
     fetchDepartments();
@@ -34,10 +41,10 @@ export const DepartmentList: React.FC<DepartmentListProps> = ({ onNotify }) => {
   const handleCreateOrUpdate = async (data: { name: string; code?: string | null; status?: DepartmentStatus }) => {
     if (selectedDept) {
       await apiClient.updateDepartment(selectedDept.id, data);
-      onNotify('success', `Department '${data.name}' updated successfully`);
+      notifyRef.current('success', `Department '${data.name}' updated successfully`);
     } else {
       await apiClient.createDepartment({ name: data.name, code: data.code || undefined });
-      onNotify('success', `Department '${data.name}' created successfully`);
+      notifyRef.current('success', `Department '${data.name}' created successfully`);
     }
     await fetchDepartments();
   };
